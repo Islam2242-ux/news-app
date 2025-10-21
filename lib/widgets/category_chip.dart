@@ -21,17 +21,20 @@ class CategoryChip extends StatelessWidget {
         label: Text(label),
         selected: isSelected,
         onSelected: (_) => onTap(),
-        backgroundColor: Colors.grey[100],
-        selectedColor: AppColors.primary.withOpacity(0.2),
-        checkmarkColor: AppColors.primary,
+        // Gunakan warna Deep Sea Blue sebagai aksen pada chip
+        backgroundColor: AppColors.primary.withOpacity(0.1),
+        selectedColor: AppColors.primary, // Deep Sea Blue Solid saat terpilih
+        checkmarkColor: AppColors.onPrimary, // Checkmark putih
         labelStyle: TextStyle(
-          color: isSelected ? AppColors.primary : AppColors.textSecondary,
+          // Teks putih saat terpilih, Deep Blue saat tidak
+          color: isSelected ? AppColors.onPrimary : AppColors.primary, 
           fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
         ),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
           side: BorderSide(
-            color: isSelected ? AppColors.primary : Colors.transparent,
+            // Border mengikuti warna Deep Blue
+            color: isSelected ? AppColors.primary : AppColors.primary.withOpacity(0.5), 
           ),
         ),
       ),

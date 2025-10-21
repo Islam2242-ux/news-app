@@ -15,19 +15,25 @@ class NewsCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       margin: EdgeInsets.only(bottom: 16),
-      elevation: 2,
-      shadowColor: AppColors.cardShadow,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 5, // Elevation lebih tinggi untuk efek mengapung
+      shadowColor: AppColors.darkPrimary.withOpacity(
+        0.2,
+      ), // Shadow warna Deep Blue
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ), // Sudut lebih membulat
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Image
             if (article.urlToImage != null)
               ClipRRect(
-                borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+                borderRadius: BorderRadius.vertical(
+                  top: Radius.circular(16),
+                ), // Sudut lebih membulat
                 child: CachedNetworkImage(
                   imageUrl: article.urlToImage!,
                   height: 200,
@@ -36,7 +42,11 @@ class NewsCard extends StatelessWidget {
                   placeholder: (context, url) => Container(
                     height: 200,
                     color: AppColors.divider,
-                    child: Center(child: CircularProgressIndicator()),
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        color: AppColors.primary,
+                      ),
+                    ),
                   ),
                   errorWidget: (context, url, error) => Container(
                     height: 200,
@@ -65,8 +75,8 @@ class NewsCard extends StatelessWidget {
                           child: Text(
                             article.source!.name!,
                             style: TextStyle(
-                              color: AppColors.primary,
-                              fontSize: 12,
+                              color: AppColors.primary, // Warna Deep Sea Blue
+                              fontSize: 13,
                               fontWeight: FontWeight.bold,
                             ),
                             overflow: TextOverflow.ellipsis,
@@ -91,8 +101,8 @@ class NewsCard extends StatelessWidget {
                     Text(
                       article.title!,
                       style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800, // Extra Bold
                         color: AppColors.textPrimary,
                         height: 1.3,
                       ),
