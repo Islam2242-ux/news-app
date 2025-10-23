@@ -7,6 +7,7 @@ import 'package:news_app/widgets/news_card.dart';
 import 'package:news_app/widgets/category_chip.dart';
 import 'package:news_app/widgets/loading_shimmer.dart';
 import 'package:news_app/widgets/dynamic_clock.dart';
+import 'package:news_app/widgets/weather_panel.dart';
 
 // Helper class untuk membuat header menempel (Sticky Header)
 class _SliverCategoryHeaderDelegate extends SliverPersistentHeaderDelegate {
@@ -50,13 +51,19 @@ class _HomeViewState extends State<HomeView> {
   // 💡 STATE BARU untuk mengontrol Search Bar
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+
+  late AnimationController _animationController;
+  late Animation<double> _animation;
+
+  bool _isWeatherPanelVisible = false;
 
   @override
   void initState() {
     super.initState();
     // ... (Logika Scroll Notification listener lainnya tetap sama)
   }
-  
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -64,10 +71,17 @@ class _HomeViewState extends State<HomeView> {
     super.dispose();
   }
 
+  void _toggleWeatherPanel() {
+    setState(() {
+      _isWeatherPanelVisible = !_isWeatherPanelVisible;
+    });
+  }
+
   // Logika untuk mendeteksi scroll
   void _scrollListener(ScrollNotification notification) {
     const double maxScroll = 200.0;
-    if (notification.metrics.axis == Axis.vertical && notification.metrics.extentBefore >= 0) {
+    if (notification.metrics.axis == Axis.vertical &&
+        notification.metrics.extentBefore >= 0) {
       double scrollOffset = notification.metrics.pixels.clamp(0.0, maxScroll);
       _scrollPosition.value = (scrollOffset / maxScroll).clamp(0.0, 1.0);
     }
@@ -90,6 +104,31 @@ class _HomeViewState extends State<HomeView> {
       controller.searchNews(query);
       FocusScope.of(context).unfocus(); // Sembunyikan keyboard
     }
+  }
+
+  Widget _buildAnimatedWeatherPanel() {
+    return AnimatedSwitcher(
+      duration: Duration(milliseconds: 300),
+      transitionBuilder: (Widget child, Animation<double> animation) {
+        // Animasi Slide Down/Up Cepat-Lambat
+        final offsetAnimation =
+            Tween<Offset>(
+              begin: Offset(0.0, -1.0), // Mulai dari atas (tersembunyi)
+              end: Offset.zero,
+            ).animate(
+              CurvedAnimation(parent: animation, curve: Curves.fastOutSlowIn),
+            );
+
+        // Memotong agar slide-in/out terlihat bersih
+        return ClipRect(
+          child: SlideTransition(position: offsetAnimation, child: child),
+        );
+      },
+      // Menampilkan WeatherPanel jika visible, jika tidak tampilkan SizedBox dengan Key
+      child: _isWeatherPanelVisible
+          ? WeatherPanel(key: ValueKey('open'))
+          : SizedBox.shrink(key: ValueKey('closed')),
+    );
   }
 
   // Helper: Baris Filter Kategori
@@ -121,9 +160,9 @@ class _HomeViewState extends State<HomeView> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: AppColors.darkPrimary,
-// Properti 'automaticallyImplyLeading' diatur ke false karena kita mengelola logo/tombol back sendiri
-        automaticallyImplyLeading: false, 
-        
+        // Properti 'automaticallyImplyLeading' diatur ke false karena kita mengelola logo/tombol back sendiri
+        automaticallyImplyLeading: false,
+
         // 💡 JUDUL SEBAGAI CONTAINER SEARCH BAR PENUH
         title: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -134,25 +173,21 @@ class _HomeViewState extends State<HomeView> {
               duration: Duration(milliseconds: 300),
               curve: Curves.easeInOut,
               // Lebar Icon (28) + Spasi (8) + Margin (4)
-              width: _isSearching ? 0 : 40, 
+              width: _isSearching ? 0 : 40,
               child: AnimatedOpacity(
                 opacity: _isSearching ? 0.0 : 1.0,
                 duration: Duration(milliseconds: 300),
                 curve: Curves.easeInOut,
-                child: Icon(
-                    Icons.newspaper, 
-                    size: 28,
-                    color: AppColors.accent, 
-                  ),
+                child: Icon(Icons.newspaper, size: 28, color: AppColors.accent),
               ),
             ),
-            
+
             // 2. SEARCH BAR UTAMA (Tengah)
             Expanded(
               child: Container(
                 height: 40,
                 decoration: BoxDecoration(
-                  color: AppColors.primary, 
+                  color: AppColors.primary,
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: TextField(
@@ -163,12 +198,17 @@ class _HomeViewState extends State<HomeView> {
                   style: TextStyle(color: AppColors.onPrimary),
                   decoration: InputDecoration(
                     hintText: 'Cari Berita...',
-                    hintStyle: TextStyle(color: AppColors.onPrimary.withOpacity(0.7)),
+                    hintStyle: TextStyle(
+                      color: AppColors.onPrimary.withOpacity(0.7),
+                    ),
                     border: InputBorder.none,
-                    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
                     isDense: true,
                     // Tombol X untuk clear dan menutup
-                    suffixIcon: _isSearching 
+                    suffixIcon: _isSearching
                         ? IconButton(
                             icon: Icon(Icons.clear, color: AppColors.onPrimary),
                             onPressed: () {
@@ -183,7 +223,7 @@ class _HomeViewState extends State<HomeView> {
             ),
           ],
         ),
-        
+
         // 3. ICON SEARCH TOGGLE (Expanded/Melebar)
         actions: [
           // Menggunakan AnimatedContainer untuk menganimasikan margin horizontal
@@ -196,8 +236,8 @@ class _HomeViewState extends State<HomeView> {
             margin: EdgeInsets.symmetric(horizontal: _isSearching ? 12.0 : 4.0),
             child: IconButton(
               icon: Icon(
-                _isSearching ? Icons.close : Icons.search, 
-                color: AppColors.onPrimary
+                _isSearching ? Icons.close : Icons.search,
+                color: AppColors.onPrimary,
               ),
               onPressed: _toggleSearch,
             ),
@@ -227,7 +267,11 @@ class _HomeViewState extends State<HomeView> {
               // 1. JAM DINAMIS
               SliverToBoxAdapter(
                 child: Obx(
-                  () => DynamicClock(scrollPosition: _scrollPosition.value),
+                  () => DynamicClock(
+                    scrollPosition: _scrollPosition.value,
+                    onWeatherToggle:
+                        () {}, // Placeholder, as it's not directly used here
+                  ),
                 ),
               ),
 
@@ -319,24 +363,24 @@ class _HomeViewState extends State<HomeView> {
   Widget _buildEmptyWidget() {
     /* ... kode empty widget ... */
     return Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.newspaper, size: 64, color: AppColors.textHint),
-          SizedBox(height: 16),
-          Text(
-            'No news available',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: AppColors.textPrimary,
-            ),
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.newspaper, size: 64, color: AppColors.textHint),
+        SizedBox(height: 16),
+        Text(
+          'No news available',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: AppColors.textPrimary,
           ),
-          SizedBox(height: 8),
-          Text(
-            'Please try again later',
-            style: TextStyle(color: AppColors.textSecondary),
-          ),
-        ],
+        ),
+        SizedBox(height: 8),
+        Text(
+          'Please try again later',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
+      ],
     );
   }
 

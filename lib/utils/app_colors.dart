@@ -23,4 +23,18 @@ class AppColors {
   // Warna Tambahan
   static const Color divider = Color(0xFFE0E0E0);
   static const Color cardShadow = Color(0x1A000000);
+
+  static Map<String, List<Color>> getWeatherGradient(String iconCode) {
+    if (iconCode.contains('d')) { // Siang Hari
+      if (iconCode.startsWith('01')) { // Cerah
+        return {'key': [Color(0xFF5AB9F1), Color(0xFF0A406A)]}; // Accent ke Primary
+      } else if (iconCode.startsWith('09') || iconCode.startsWith('10')) { // Hujan/Gerimis
+        return {'key': [Color(0xFF607D8B), Color(0xFF455A64)]}; // Abu-abu Biru
+      } else if (iconCode.startsWith('04')) { // Berawan Tebal
+        return {'key': [Color(0xFFAAB8C2), Color(0xFF757F9A)]}; // Abu-abu Cerah
+      }
+    }
+    // Default atau Malam Hari (Mengikuti tema gelap aplikasi)
+    return {'key': [Color(0xFF0A406A), Color(0xFF072B45)]}; 
+  }
 }

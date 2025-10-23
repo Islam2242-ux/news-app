@@ -4,7 +4,11 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:intl/intl.dart';
 import 'package:news_app/utils/app_colors.dart';
+import 'package:get/get.dart';
 import 'dart:math';
+import 'package:news_app/controllers/weather_controller.dart';
+import 'package:news_app/models/weather_model.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 // Jarak Jarum jam dan Menit yang Sudah Disesuaikan (dalam persentase radius)
 const double _hourHandLengthRatio = 0.4; // 40% dari radius
@@ -114,22 +118,32 @@ class AnalogClockPainter extends CustomPainter {
 
 class DynamicClock extends StatefulWidget {
   final double scrollPosition; // Menerima nilai scroll dari HomeView
+  final VoidCallback onWeatherToggle;
 
-  const DynamicClock({Key? key, required this.scrollPosition})
-    : super(key: key);
+  const DynamicClock({
+    Key? key,
+    required this.scrollPosition,
+    required this.onWeatherToggle,
+  }) : super(key: key);
 
   @override
   _DynamicClockState createState() => _DynamicClockState();
 }
 
 class _DynamicClockState extends State<DynamicClock> {
+  final WeatherController _weatherController = Get.put(WeatherController());
+
   DateTime _dateTime = DateTime.now();
   bool _isAnalog = true; // Diubah ke Analog untuk default
+  late Timer _timer;
+
+  // STATE BARU: Mengontrol visibilitas panel cuaca
+  bool _isWeatherPanelVisible = false;
 
   @override
   void initState() {
     super.initState();
-    Timer.periodic(Duration(seconds: 1), (timer) {
+    _timer = Timer.periodic(Duration(milliseconds: 50), (timer) {
       if (mounted) {
         setState(() {
           _dateTime = DateTime.now();
@@ -184,7 +198,14 @@ class _DynamicClockState extends State<DynamicClock> {
     );
   }
 
-  // 💡 MODIFIKASI LAYOUT: Jam Analog di kiri dengan Tanggal di kanan
+  Widget _buildWeatherToggleIcon() {
+    return IconButton(
+      icon: Icon(Icons.cloud, color: AppColors.onPrimary.withOpacity(0.9)),
+      onPressed: widget.onWeatherToggle, // Menggunakan callback dari widget
+      tooltip: 'Perkiraan Cuaca',
+    );
+  }
+
   Widget _buildAnalogClock() {
     final dateFormat = DateFormat('EEE, dd MMMM yyyy');
 
@@ -239,83 +260,267 @@ class _DynamicClockState extends State<DynamicClock> {
     );
   }
 
+  // WIDGET BARU: Panel Informasi Cuaca
+  Widget _buildWeatherPanel() {
+    return Obx(() {
+      final weather = _weatherController.weatherData.value;
+
+      if (_weatherController.isLoading.value) {
+        return Center(
+          child: CircularProgressIndicator(color: AppColors.accent),
+        );
+      }
+
+      if (weather == null) {
+        return Center(
+          child: Text(
+            'Gagal memuat cuaca.',
+            style: TextStyle(color: AppColors.onPrimary.withOpacity(0.8)),
+          ),
+        );
+      }
+
+      // Ambil warna gradien berdasarkan kondisi cuaca
+      final gradientColors =
+          AppColors.getWeatherGradient(weather.iconCode)['key'] ??
+          [AppColors.primary, AppColors.darkPrimary];
+
+      return Container(
+        margin: EdgeInsets.only(top: 10),
+        padding: EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          gradient: LinearGradient(
+            colors: gradientColors,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 5)],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Cuaca Saat Ini
+            Row(
+              children: [
+                Icon(
+                  Icons.location_on,
+                  color: AppColors.onPrimary.withOpacity(0.9),
+                  size: 16,
+                ),
+                SizedBox(width: 4),
+                Text(
+                  weather.locationName,
+                  style: TextStyle(
+                    color: AppColors.onPrimary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 8),
+            Row(
+              children: [
+                CachedNetworkImage(
+                  imageUrl:
+                      'https://openweathermap.org/img/wn/${weather.iconCode}@2x.png',
+                  height: 50,
+                  width: 50,
+                  color: AppColors.onPrimary,
+                  errorWidget: (context, url, error) =>
+                      Icon(Icons.error, color: AppColors.onPrimary),
+                ),
+                SizedBox(width: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${weather.tempC.toStringAsFixed(1)}°C',
+                      style: TextStyle(
+                        color: AppColors.onPrimary,
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      weather.description.capitalize ?? '',
+                      style: TextStyle(
+                        color: AppColors.onPrimary.withOpacity(0.8),
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+
+            Divider(color: AppColors.onPrimary.withOpacity(0.3), height: 20),
+
+            // Perkiraan Cuaca Selanjutnya (Forecast)
+            Text(
+              'Perkiraan 5 Jam ke Depan:',
+              style: TextStyle(
+                color: AppColors.onPrimary,
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+              ),
+            ),
+            SizedBox(height: 8),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: weather.forecast
+                    .map(
+                      (f) => Container(
+                        margin: EdgeInsets.only(right: 12),
+                        child: Column(
+                          children: [
+                            Text(
+                              DateFormat('HH:mm').format(
+                                DateTime.fromMillisecondsSinceEpoch(
+                                  f.dt * 1000,
+                                ),
+                              ),
+                              style: TextStyle(
+                                color: AppColors.onPrimary.withOpacity(0.8),
+                                fontSize: 11,
+                              ),
+                            ),
+                            CachedNetworkImage(
+                              imageUrl:
+                                  'https://openweathermap.org/img/wn/${f.iconCode}.png',
+                              height: 30,
+                              width: 30,
+                              color: AppColors.onPrimary,
+                            ),
+                            Text(
+                              '${f.tempC.toStringAsFixed(0)}°',
+                              style: TextStyle(
+                                color: AppColors.onPrimary,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                    .toList(),
+              ),
+            ),
+          ],
+        ),
+      );
+    });
+  }
+
+  //belum bawah
+
   @override
   Widget build(BuildContext context) {
     // scrollPosition berkisar antara 0.0 (atas) hingga 1.0 (gulir penuh)
 
     // 1. Skala (Scale): Dari 1.0 (normal) ke 0.0 (hilang)
     final double scaleFactor = 1.0 - widget.scrollPosition;
+    final double offsetX = 0 * widget.scrollPosition;
 
-    // 2. Geser (Translate): Geser ke kiri seiring menghilang
-    final double offsetX =
-        0 * widget.scrollPosition; // Geser 100 piksel ke kiri
+    // Sesuaikan tinggi maksimal kontainer untuk menampung panel cuaca baru
+    final double maxClockHeight = _isWeatherPanelVisible ? 450 : 200;
 
     return Transform.translate(
       offset: Offset(offsetX, 0),
       child: Transform.scale(
         scale: scaleFactor,
-        alignment: Alignment.centerLeft, // PENTING: Mengecil ke arah kiri
+        alignment: Alignment.centerLeft,
         child: Opacity(
-          opacity: scaleFactor.clamp(0.0, 1.0), // Opacity mengikuti skala
+          opacity: scaleFactor.clamp(0.0, 1.0),
           child: Container(
-            padding: EdgeInsets.all(15),
-            margin: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            decoration: BoxDecoration(
-              color: AppColors.primary,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.darkPrimary.withOpacity(0.5),
-                  blurRadius: 15,
-                  offset: Offset(0, 8),
-                ),
-              ],
-            ),
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'WIB (Waktu Lokal)',
-                      style: TextStyle(
-                        color: AppColors.onPrimary.withOpacity(0.8),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
+            // Menggunakan AnimatedSize untuk animasi ketinggian box
+            child: AnimatedSize(
+              duration: Duration(milliseconds: 300),
+              curve: Curves.fastOutSlowIn,
+              child: Container(
+                constraints: BoxConstraints(
+                  maxHeight: maxClockHeight,
+                ), // Batasan tinggi
+                padding: EdgeInsets.all(20),
+                margin: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.darkPrimary.withOpacity(0.5),
+                      blurRadius: 15,
+                      offset: Offset(0, 8),
                     ),
-                    _buildToggleIcon(),
                   ],
                 ),
-                SizedBox(height: 0),
-                Container(
-                  height: 160,
-                  child: AnimatedSwitcher(
-                    duration: Duration(milliseconds: 500),
-                    transitionBuilder: (Widget child, Animation<double> animation) {
-                      final scale = Tween<double>(begin: 0.5, end: 1.0).animate(
-                        CurvedAnimation(
-                          parent: animation,
-                          // Kurva: Cepat di awal, lambat di akhir (Fast-Slow)
-                          curve: Curves.fastEaseInToSlowEaseOut,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'WIB (Waktu Lokal)',
+                          style: TextStyle(
+                            color: AppColors.onPrimary.withOpacity(0.8),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
-                      );
-                      final fade = Tween<double>(
-                        begin: 0.0,
-                        end: 1.0,
-                      ).animate(animation);
+                        Row(
+                          children: [
+                            // 💡 Tombol Cuaca
+                            _buildWeatherToggleIcon(),
+                            // Tombol Jam
+                            _buildToggleIcon(),
+                          ],
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 15),
 
-                      return FadeTransition(
-                        opacity: fade,
-                        child: ScaleTransition(scale: scale, child: child),
-                      );
-                    },
-                    child: _isAnalog
-                        ? _buildAnalogClock()
-                        : _buildDigitalClock(),
-                  ),
+                    // Container Jam
+                    Container(
+                      height: 160,
+                      child: AnimatedSwitcher(
+                        duration: Duration(milliseconds: 500),
+                        transitionBuilder:
+                            (Widget child, Animation<double> animation) {
+                              final Animation<double> scaleAnimation =
+                                  Tween<double>(begin: 0.8, end: 1.0).animate(
+                                    CurvedAnimation(
+                                      parent: animation,
+                                      curve: Curves.fastOutSlowIn,
+                                    ),
+                                  );
+                              final Animation<double> fadeAnimation =
+                                  Tween<double>(
+                                    begin: 0.0,
+                                    end: 1.0,
+                                  ).animate(animation);
+                              return FadeTransition(
+                                opacity: fadeAnimation,
+                                child: ScaleTransition(
+                                  scale: scaleAnimation,
+                                  child: child,
+                                ),
+                              );
+                            },
+                        child: _isAnalog
+                            ? _buildAnalogClock()
+                            : _buildDigitalClock(),
+                      ),
+                    ),
+
+                    // 💡 Panel Cuaca dengan Animasi Geser/Slide (Muncul di bawah Jam)
+                    if (_isWeatherPanelVisible) _buildWeatherPanel(),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ),
