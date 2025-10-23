@@ -9,63 +9,60 @@ import 'package:news_app/widgets/loading_shimmer.dart';
 import 'package:news_app/widgets/dynamic_clock.dart';
 import 'package:news_app/widgets/weather_panel.dart';
 
-// Helper class untuk membuat header menempel (Sticky Header)
 class _SliverCategoryHeaderDelegate extends SliverPersistentHeaderDelegate {
-  final Widget child;
   final double height;
+  final Widget child;
 
-  _SliverCategoryHeaderDelegate({required this.child, required this.height});
+  _SliverCategoryHeaderDelegate({required this.height, required this.child});
 
   @override
-  double get minExtent => height;
+  Widget build(
+      BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return SizedBox(height: height, child: child);
+  }
 
   @override
   double get maxExtent => height;
 
   @override
-  Widget build(
-    BuildContext context,
-    double shrinkOffset,
-    bool overlapsContent,
-  ) {
-    return Container(color: AppColors.surface, child: child);
-  }
+  double get minExtent => height;
 
   @override
   bool shouldRebuild(_SliverCategoryHeaderDelegate oldDelegate) {
-    return oldDelegate.height != height || oldDelegate.child != child;
+    return height != oldDelegate.height || child != oldDelegate.child;
   }
 }
 
-// Mengubah menjadi StatefulWidget untuk menangani Scroll Notification
+
 class HomeView extends StatefulWidget {
   @override
   _HomeViewState createState() => _HomeViewState();
 }
 
-class _HomeViewState extends State<HomeView> {
+// PERBAIKAN: Menggunakan SingleTickerProviderStateMixin untuk Animasi (Walaupun animasi AppBar disederhanakan, ini penting untuk Shimmer)
+class _HomeViewState extends State<HomeView> 
+    with SingleTickerProviderStateMixin { 
+
   final NewsController controller = Get.find<NewsController>();
-  // Status untuk mengontrol animasi Jam
   final RxDouble _scrollPosition = 0.0.obs;
 
-  // 💡 STATE BARU untuk mengontrol Search Bar
-  bool _isSearching = false;
+  // PERBAIKAN: Gunakan FocusNode dan State sederhana, hapus AnimationController/Animation yang menyebabkan LateError
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
-
-  late AnimationController _animationController;
-  late Animation<double> _animation;
+  bool _isSearching = false; // State untuk toggle tampilan
 
   bool _isWeatherPanelVisible = false;
 
   @override
   void initState() {
     super.initState();
-    // ... (Logika Scroll Notification listener lainnya tetap sama)
+    // Inisialisasi TickerProvider yang diperlukan oleh LoadingShimmer (walaupun tidak digunakan di AppBar lagi)
+    // NOTE: Logika _searchFocusNode.addListener dipindahkan ke _toggleSearch untuk kesederhanaan.
   }
 
   @override
   void dispose() {
+    _searchFocusNode.dispose();
     _searchController.dispose();
     _scrollPosition.close();
     super.dispose();
@@ -77,62 +74,39 @@ class _HomeViewState extends State<HomeView> {
     });
   }
 
-  // Logika untuk mendeteksi scroll
   void _scrollListener(ScrollNotification notification) {
     const double maxScroll = 200.0;
-    if (notification.metrics.axis == Axis.vertical &&
-        notification.metrics.extentBefore >= 0) {
+    if (notification.metrics.axis == Axis.vertical && notification.metrics.extentBefore >= 0) {
       double scrollOffset = notification.metrics.pixels.clamp(0.0, maxScroll);
       _scrollPosition.value = (scrollOffset / maxScroll).clamp(0.0, 1.0);
     }
   }
 
-  // MENTOGGLE SEARCH BAR
+  // PERBAIKAN: Logika Toggle Search BARU
   void _toggleSearch() {
     setState(() {
       _isSearching = !_isSearching;
       if (!_isSearching) {
         _searchController.clear();
-        controller.refreshNews(); // Muat ulang berita jika pencarian ditutup
+        controller.refreshNews(); 
+        _searchFocusNode.unfocus();
+      } else {
+        // Jika membuka search bar, fokuskan segera
+        FocusScope.of(context).requestFocus(_searchFocusNode);
       }
     });
   }
 
-  // Submit pencarian
   void _submitSearch(String query) {
     if (query.isNotEmpty) {
       controller.searchNews(query);
-      FocusScope.of(context).unfocus(); // Sembunyikan keyboard
+      // Biarkan _isSearching tetap true saat hasil ditampilkan
+      FocusScope.of(context).unfocus(); 
     }
   }
 
-  Widget _buildAnimatedWeatherPanel() {
-    return AnimatedSwitcher(
-      duration: Duration(milliseconds: 300),
-      transitionBuilder: (Widget child, Animation<double> animation) {
-        // Animasi Slide Down/Up Cepat-Lambat
-        final offsetAnimation =
-            Tween<Offset>(
-              begin: Offset(0.0, -1.0), // Mulai dari atas (tersembunyi)
-              end: Offset.zero,
-            ).animate(
-              CurvedAnimation(parent: animation, curve: Curves.fastOutSlowIn),
-            );
-
-        // Memotong agar slide-in/out terlihat bersih
-        return ClipRect(
-          child: SlideTransition(position: offsetAnimation, child: child),
-        );
-      },
-      // Menampilkan WeatherPanel jika visible, jika tidak tampilkan SizedBox dengan Key
-      child: _isWeatherPanelVisible
-          ? WeatherPanel(key: ValueKey('open'))
-          : SizedBox.shrink(key: ValueKey('closed')),
-    );
-  }
-
-  // Helper: Baris Filter Kategori
   Widget _buildCategoryRow() {
+    // ... (Kode _buildCategoryRow tetap sama)
     return Container(
       height: 60,
       color: AppColors.surface,
@@ -154,69 +128,92 @@ class _HomeViewState extends State<HomeView> {
     );
   }
 
+  Widget _buildAnimatedWeatherPanel() {
+    return AnimatedSwitcher(
+      duration: Duration(milliseconds: 300),
+      transitionBuilder: (Widget child, Animation<double> animation) {
+        final offsetAnimation = Tween<Offset>(
+          begin: Offset(0.0, -1.0), 
+          end: Offset.zero,
+        ).animate(CurvedAnimation(
+          parent: animation,
+          curve: Curves.fastOutSlowIn,
+        ));
+        return ClipRect(
+          child: SlideTransition(
+            position: offsetAnimation,
+            child: child,
+          ),
+        );
+      },
+      child: _isWeatherPanelVisible 
+          ? WeatherPanel(key: ValueKey('open')) 
+          : SizedBox.shrink(key: ValueKey('closed')), 
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Ukuran logo saat terlihat (dihitung)
+    const double _logoSize = 28.0;
+    const double _logoMargin = 12.0;
+    
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: AppColors.darkPrimary,
-        // Properti 'automaticallyImplyLeading' diatur ke false karena kita mengelola logo/tombol back sendiri
-        automaticallyImplyLeading: false,
+        backgroundColor: AppColors.darkPrimary, 
+        automaticallyImplyLeading: false, 
+        toolbarHeight: 60,
 
-        // 💡 JUDUL SEBAGAI CONTAINER SEARCH BAR PENUH
+        // PERBAIKAN 4: Struktur AppBar Baru (Logo selalu terlihat, Search Bar di tengah)
         title: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // 1. LOGO APLIKASI (SLIDE OUT/IN)
-            // Animasi width dan opacity untuk efek geser keluar dan menghilang.
+            // 1. LOGO APLIKASI (Selalu Ada, kecuali saat Search Terbuka Penuh)
             AnimatedContainer(
-              duration: Duration(milliseconds: 300),
-              curve: Curves.easeInOut,
-              // Lebar Icon (28) + Spasi (8) + Margin (4)
-              width: _isSearching ? 0 : 40,
-              child: AnimatedOpacity(
+              duration: Duration(milliseconds: 350),
+              curve: Curves.fastOutSlowIn,
+              width: _isSearching ? 0 : _logoSize,
+              child: Opacity(
                 opacity: _isSearching ? 0.0 : 1.0,
-                duration: Duration(milliseconds: 300),
-                curve: Curves.easeInOut,
-                child: Icon(Icons.newspaper, size: 28, color: AppColors.accent),
+                child: Icon(
+                  Icons.newspaper, 
+                  size: _logoSize,
+                  color: AppColors.accent,
+                ),
               ),
             ),
+            
+            // Spasi antara Logo dan Search Bar
+            SizedBox(width: _isSearching ? 0 : _logoMargin), 
 
-            // 2. SEARCH BAR UTAMA (Tengah)
+            // 2. SEARCH BAR UTAMA (MELEBAR KE TENGAH/KIRI)
             Expanded(
-              child: Container(
-                height: 40,
+              child: AnimatedContainer(
+                duration: Duration(milliseconds: 350),
+                curve: Curves.fastOutSlowIn,
+                // Gunakan padding untuk mengisi ruang yang dikosongkan logo
+                margin: EdgeInsets.only(right: _isSearching ? 12 : 0), 
                 decoration: BoxDecoration(
                   color: AppColors.primary,
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: TextField(
                   controller: _searchController,
+                  focusNode: _searchFocusNode, 
                   onSubmitted: _submitSearch,
-                  enabled: _isSearching, // Hanya aktif saat mode mencari
-                  autofocus: true,
-                  style: TextStyle(color: AppColors.onPrimary),
+                  // Teks dapat diketik kapan saja setelah toggle
+                  enabled: true, 
+                  style: TextStyle(color: AppColors.onPrimary, fontSize: 16),
                   decoration: InputDecoration(
-                    hintText: 'Cari Berita...',
-                    hintStyle: TextStyle(
-                      color: AppColors.onPrimary.withOpacity(0.7),
-                    ),
+                    hintText: _isSearching ? 'Cari Berita di Sini...' : 'Cari Berita',
+                    hintStyle: TextStyle(color: AppColors.onPrimary.withOpacity(0.7)),
                     border: InputBorder.none,
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
                     isDense: true,
-                    // Tombol X untuk clear dan menutup
-                    suffixIcon: _isSearching
-                        ? IconButton(
-                            icon: Icon(Icons.clear, color: AppColors.onPrimary),
-                            onPressed: () {
-                              _searchController.clear();
-                              _submitSearch('');
-                            },
-                          )
-                        : null,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    // Ikon Search di kiri field input
+                    prefixIcon: Icon(Icons.search, color: AppColors.accent, size: 20),
+                    prefixIconConstraints: BoxConstraints(minWidth: 0, minHeight: 0),
                   ),
                 ),
               ),
@@ -224,58 +221,42 @@ class _HomeViewState extends State<HomeView> {
           ],
         ),
 
-        // 3. ICON SEARCH TOGGLE (Expanded/Melebar)
+        // 3. ICON TOGGLE SEARCH
         actions: [
-          // Menggunakan AnimatedContainer untuk menganimasikan margin horizontal
-          // agar terlihat "melebar" dan menyusut saat Logo di sisi kiri menghilang.
-          AnimatedContainer(
-            duration: Duration(milliseconds: 300),
-            curve: Curves.easeInOut,
-            // Lebar 16 saat tidak mencari (padding normal)
-            // Lebar 40 saat mencari (menggantikan ruang logo yang hilang)
-            margin: EdgeInsets.symmetric(horizontal: _isSearching ? 12.0 : 4.0),
-            child: IconButton(
-              icon: Icon(
-                _isSearching ? Icons.close : Icons.search,
-                color: AppColors.onPrimary,
-              ),
-              onPressed: _toggleSearch,
+          // Gunakan tombol Search sebagai toggle (yang juga berfungsi sebagai Close jika sudah terbuka)
+          IconButton(
+            icon: Icon(
+              _isSearching ? Icons.close : Icons.search, 
+              color: AppColors.onPrimary
             ),
+            onPressed: _toggleSearch,
           ),
         ],
       ),
-      // Menggunakan NotificationListener untuk mendengarkan guliran
+      
       body: NotificationListener<ScrollNotification>(
         onNotification: (ScrollNotification notification) {
-          // Hanya pantau scroll pada CustomScrollView (Primary Scroll)
-          if (notification.metrics.axis == Axis.vertical &&
-              notification.metrics.extentBefore >= 0) {
-            // Batasi nilai guliran untuk normalisasi animasi antara 0.0 hingga 1.0
-            double maxScroll = 200.0;
-            double scrollOffset = notification.metrics.pixels.clamp(
-              0.0,
-              maxScroll,
-            );
-            _scrollPosition.value = (scrollOffset / maxScroll).clamp(0.0, 1.0);
-          }
+          _scrollListener(notification);
           return false;
         },
         child: RefreshIndicator(
           onRefresh: controller.refreshNews,
           child: CustomScrollView(
             slivers: [
-              // 1. JAM DINAMIS
+              // 1. BAR JAM (DynamicClock)
               SliverToBoxAdapter(
-                child: Obx(
-                  () => DynamicClock(
-                    scrollPosition: _scrollPosition.value,
-                    onWeatherToggle:
-                        () {}, // Placeholder, as it's not directly used here
-                  ),
-                ),
+                child: Obx(() => DynamicClock(
+                  scrollPosition: _scrollPosition.value,
+                  onWeatherToggle: _toggleWeatherPanel, // Pass toggle cuaca
+                )),
+              ),
+              
+              // 2. KOTAK CUACA ANIMASI
+              SliverToBoxAdapter(
+                child: _buildAnimatedWeatherPanel(),
               ),
 
-              // 2. FILTER KATEGORI (Header Menempel/Sticky Header)
+              // 3. FILTER KATEGORI (Sticky Header)
               SliverPersistentHeader(
                 pinned: true,
                 delegate: _SliverCategoryHeaderDelegate(
@@ -284,43 +265,37 @@ class _HomeViewState extends State<HomeView> {
                 ),
               ),
 
-              // 3. DAFTAR BERITA DINAMIS
+              // 4. DAFTAR BERITA
               Obx(() {
+                // ... (Logika daftar berita tetap sama)
                 if (controller.isLoading) {
-                  return SliverFillRemaining(
-                    child: SizedBox(
-                      height: MediaQuery.of(context).size.height * 0.7,
-                      child: LoadingShimmer(),
-                    ),
+                  return SliverFillRemaining( 
+                    child: LoadingShimmer(),
                   );
                 }
-
+                // ... (Error dan Empty widget tetap sama)
+                
                 if (controller.error.isNotEmpty) {
-                  return SliverFillRemaining(
+                  return SliverFillRemaining( 
                     hasScrollBody: false,
-                    child: _buildErrorWidget(),
+                    child: Center(child: _buildErrorWidget()),
                   );
                 }
-
                 if (controller.articles.isEmpty) {
-                  return SliverFillRemaining(
+                  return SliverFillRemaining( 
                     hasScrollBody: false,
-                    child: _buildEmptyWidget(),
+                    child: Center(child: _buildEmptyWidget()),
                   );
                 }
-
+                
                 return SliverList(
-                  delegate: SliverChildBuilderDelegate((
-                    BuildContext context,
-                    int index,
-                  ) {
+                  delegate: SliverChildBuilderDelegate((BuildContext context, int index) {
                     final article = controller.articles[index];
                     return Padding(
                       padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
                       child: NewsCard(
                         article: article,
-                        onTap: () =>
-                            Get.toNamed(Routes.NEWS_DETAIL, arguments: article),
+                        onTap: () => Get.toNamed(Routes.NEWS_DETAIL, arguments: article),
                       ),
                     );
                   }, childCount: controller.articles.length),
@@ -332,94 +307,54 @@ class _HomeViewState extends State<HomeView> {
       ),
     );
   }
-
-  // Metode Pembantu...
+  
   Widget _buildErrorWidget() {
-    /* ... kode error widget ... */
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(Icons.error_outline, size: 64, color: AppColors.error),
+        Icon(Icons.error_outline, color: AppColors.error, size: 48),
         SizedBox(height: 16),
         Text(
-          'Something went wrong',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: AppColors.textPrimary,
-          ),
+          'Gagal memuat berita',
+          style: TextStyle(fontSize: 18, color: AppColors.onBackground),
         ),
         SizedBox(height: 8),
         Text(
-          'Please check your internet connection',
-          style: TextStyle(color: AppColors.textSecondary),
+          controller.error,
+          textAlign: TextAlign.center,
+          style: TextStyle(color: AppColors.onBackground.withOpacity(0.7)),
         ),
-        SizedBox(height: 24),
-        ElevatedButton(onPressed: controller.refreshNews, child: Text('Retry')),
+        SizedBox(height: 16),
+        ElevatedButton.icon(
+          onPressed: controller.refreshNews,
+          icon: Icon(Icons.refresh),
+          label: Text('Coba Lagi'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.primary,
+            foregroundColor: AppColors.onPrimary,
+          ),
+        ),
       ],
     );
   }
 
   Widget _buildEmptyWidget() {
-    /* ... kode empty widget ... */
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(Icons.newspaper, size: 64, color: AppColors.textHint),
+        Icon(Icons.article_outlined, color: Colors.grey, size: 48),
         SizedBox(height: 16),
         Text(
-          'No news available',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: AppColors.textPrimary,
-          ),
+          'Tidak ada berita ditemukan',
+          style: TextStyle(fontSize: 18, color: AppColors.onBackground),
         ),
         SizedBox(height: 8),
         Text(
-          'Please try again later',
-          style: TextStyle(color: AppColors.textSecondary),
+          'Coba kata kunci lain atau pilih kategori berbeda.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: AppColors.onBackground.withOpacity(0.7)),
         ),
       ],
-    );
-  }
-
-  void _showSearchDialog(BuildContext context) {
-    final TextEditingController searchController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Search News'),
-        content: TextField(
-          controller: searchController,
-          decoration: InputDecoration(
-            hintText: 'Enter search term...',
-            border: OutlineInputBorder(),
-          ),
-          onSubmitted: (value) {
-            if (value.isNotEmpty) {
-              controller.searchNews(value);
-              Navigator.of(context).pop();
-            }
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (searchController.text.isNotEmpty) {
-                controller.searchNews(searchController.text);
-                Navigator.of(context).pop();
-              }
-            },
-            child: Text('Search'),
-          ),
-        ],
-      ),
     );
   }
 }
